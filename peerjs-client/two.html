@@ -109,6 +109,7 @@
         methods: {
             initPeer() {
                 this.peer = new Peer(this.username, debug=3);
+                
                 this.peer.on('open', function (id) {
                     console.log('My peer ID is: ' + id);
 
