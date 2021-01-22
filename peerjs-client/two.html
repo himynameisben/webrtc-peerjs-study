@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <!-- <link rel="manifest" href="manifest.json" /> -->
+
+    <script src="https://unpkg.com/peerjs@1.3.1/dist/peerjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+</head>
+
+<body>
+
+    <div id="app">
+        <div class="col-md-6 col-lg-6">
+            <button @click="disconnect()">disconnect</button>
+
+            <h3>Login</h3>
+            <small>輸入你的username, 不能跟別人重複，或者點選下方的random A/B 按鈕</small><br>
+            <input v-model="username" type="text" />
+            <button @click="initPeer()">submit</button>
+            <br>
+            <button @click="pickRandomUser('A')">random A</button>
+            <button @click="pickRandomUser('B')">random B</button>
+
+            <hr>
+            <h3>Connect</h3>
+            <small>輸入對方的username</small><br>
+            <input v-model="targetUsername" type="text" placeholder="peerId" />
+            <button @click="connect()">connect(text)</button>
+            <button @click="videoCall()">Call(video)</button>
+
+            <hr>
+            <h3>message</h3>
+            <small>輸入要傳送的文字訊息內容，會顯示在console</small>
+            <input v-model="messageText" type="text" />
+            <button @click="send()">send</button>
+
+            <!-- your camera -->
+            <div class="border">
+                <span>You</span>
+                <div>
+                    <!-- add playsinline to prevent video freeze in iOS device -->
+                    <video ref="myCamera" width="300" height="300" muted="true" autoplay playsinline />
+                </div>
+            </div>
+
+            <!-- peer's camera -->
+            <div class="border">
+                <span>peer</span>
+                <div>
+                    <!-- add playsinline to prevent video freeze in iOS device -->
+                    <video ref="peerCamera" width="300" height="300" autoplay playsinline></video>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</body>
+
+<script>
+
+    let isDev = true;
+    if (isDev) {
+        let vConsoleScript = document.createElement('script');
+        vConsoleScript.setAttribute('src', 'https://cdnjs.cloudflare.com/ajax/libs/vConsole/3.4.0/vconsole.min.js');
+        document.head.appendChild(vConsoleScript);
+
+        vConsoleScript.onload = function () {
+            var vConsole = new VConsole();
+        };
+    }
+
+    const app = new Vue({
+        el: "#app",
+        data: {
+            peer: null,
+            conn: null,
+            call: null,
+            username: null,
+            targetUsername: null,
+            messageText: null,
+            localStream: null,
+
+        },
+        created() {
+            this.requestLocalVideo({
+                success: (stream) => {
+                    console.log('requestLocalVideo success 2')
+                    // window.localStream = stream;
+                    // onReceiveStream(stream, 'my-camera');
+                    console.log(stream);
+                    console.log(this.$refs.myCamera);
+                    this.localStream = stream;
+                    this.$refs.myCamera.srcObject = stream
+                    this.$refs.myCamera.onloadedmetadata = (e) => {
+                        this.$refs.myCamera.play();
+                    };
+                },
+                error: function (err) {
+                    alert("Cannot get access to your camera and video !");
+                    console.error(err);
+                }
+            });
+
+        },
+        methods: {
+            initPeer() {
+                this.peer = new Peer(this.username, debug=3);
+                this.peer.on('open', function (id) {
+                    console.log('My peer ID is: ' + id);
+
+                });
+                
+                this.peer.on('error', (err) => {
+                    console.log(err)
+                })
+
+                this.peer.on('connection', (conn) => {
+                    conn.on('open', function () {
+                        // Receive messages
+                        conn.on('data', function (data) {
+                            console.log('Received', data);
+                        });
+
+                        // Send messages
+                        conn.send('Hello!');
+                    });
+                });
+                
+                // this.peer.on('connection', (c) => {
+                //     // Allow only a single connection
+                //     if (this.conn && this.conn.open) {
+                //         c.on('open', function () {
+                //             c.send("Already connected to another client");
+                //             // setTimeout(function () { c.close(); }, 500);
+                //         });
+                //         return;
+                //     }
+                //     this.conn = c;
+                //     console.log("Connected to: " + this.conn.peer);
+                // });
+
+                this.peer.on('call',  (call) => {
+                    var acceptsCall = confirm("Videocall incoming, do you want to accept it ?");
+
+                    if (acceptsCall) {
+                        // Answer the call with your own video/audio stream
+                        call.answer(this.localStream);
+
+                        // Receive data
+                        call.on('stream',  (stream) => {
+                            console.log('receive call stream: ')
+                            console.log(stream);
+                            console.log(this.$refs.peerCamera);
+                            this.$refs.peerCamera.srcObject = stream;
+                            this.$refs.peerCamera.onloadedmetadata = (e) => {
+                                this.$refs.peerCamera.play();
+                            };
+                        });
+
+                        // Handle when the call finishes
+                        call.on('close', function () {
+                            alert("The videocall has finished");
+                        });
+
+                        // use call.close() to finish a call
+                    } else {
+                        console.log("Call denied !");
+                    }
+                });
+
+
+            },
+            connect() {
+                console.log(this.targetUsername)
+                this.conn = this.peer.connect(this.targetUsername);
+                this.conn.on('data', function (data) {
+                    console.log("receive ", data)
+                });
+
+            },
+            disconnect() {
+                this.peer.disconnect();
+                console.log("disconnected")
+            },
+            videoCall() {
+                console.log("videoCall")
+                console.log(this.localStream);
+                console.log(this.targetUsername);
+                console.log(this.peer);
+                this.call = this.peer.call(this.targetUsername, this.localStream);
+
+                console.log(this.call)
+                this.call.on('stream', (stream) => {
+                    console.log('in stream')
+                    console.log(stream);
+                    console.log(this.$refs.peerCamera);
+                    this.$refs.peerCamera.srcObject = stream
+                    this.$refs.peerCamera.onloadedmetadata = (e) => {
+                        this.$refs.peerCamera.play();
+                    };
+
+                });
+
+
+            },
+            send() {
+                console.log(`send ${this.messageText}`);
+                this.conn.send(this.messageText);
+            },
+            requestLocalVideo(callbacks) {
+                // Monkeypatch for crossbrowser geusermedia
+                navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+
+                // Request audio an video
+                navigator.getUserMedia({ audio: true, video: true }, callbacks.success, callbacks.error);
+            },
+            pickRandomUser(suffix) {
+                let d = new Date();
+                let n = d.getMinutes();
+                let target = 'B';
+                if (suffix == 'B') {
+                    target = 'A'
+                }
+                this.username = 'ok_this_is_demo_' + n + suffix;
+                this.targetUsername = 'ok_this_is_demo_' + n + target;
+                this.initPeer()
+            }
+        },
+    })
+
+
+
+</script>
+
+<style>
+    .border {
+        border-width: 3px;
+        border-style: dashed;
+        border-color: #FFAC55;
+        padding: 5px;
+    }
+</style>
+
+</html>
